@@ -3,9 +3,12 @@ import {
   HandlerInput,
   RequestHandler,
   SkillBuilders,
-  getSlotValue
+  DefaultApiClient,
+  getSlotValue,
+  getDeviceId,
 } from "ask-sdk-core";
 import { Response, SessionEndedRequest } from "ask-sdk-model";
+import { PrivateKeyInput } from "crypto";
 
 const persistenceAdapter = require("ask-sdk-s3-persistence-adapter");
 
@@ -20,7 +23,7 @@ const LaunchRequestHandler: RequestHandler = {
       .speak(speechText)
       .reprompt(speechText)
       .getResponse();
-  }
+  },
 };
 
 const HasBirthdayLaunchRequestHandler = {
@@ -45,9 +48,25 @@ const HasBirthdayLaunchRequestHandler = {
       day
     );
   },
-  handle(handlerInput: HandlerInput): Response {
+  async handle(handlerInput: HandlerInput): Promise<Response> {
     const attributesManager = handlerInput.attributesManager;
     const sessionAttributes = attributesManager.getSessionAttributes() || {};
+
+    const serviceClientFactory = handlerInput.serviceClientFactory;
+    const deviceId = getDeviceId(handlerInput.requestEnvelope);
+    let userTimeZone;
+
+    try {
+      const upsServiceClient = serviceClientFactory.getUpsServiceClient();
+      userTimeZone = await upsServiceClient.getSystemTimeZone(deviceId);
+    } catch (error) {
+      if (error.name !== "ServiceError") {
+        return handlerInput.responseBuilder
+          .speak("There was a problem connecting to the service.")
+          .getResponse();
+      }
+      console.log("error", error.message);
+    }
 
     const year = sessionAttributes.hasOwnProperty("year")
       ? sessionAttributes.year
@@ -59,10 +78,39 @@ const HasBirthdayLaunchRequestHandler = {
       ? sessionAttributes.day
       : 0;
 
-    const speakOutput = `Welcome back. It looks like there are X more days until your y-th birthday.`;
+    const currentDateTime = new Date(
+      new Date().toLocaleString("en-US", { timeZone: userTimeZone })
+    );
+    const currentDate = new Date(
+      currentDateTime.getFullYear(),
+      currentDateTime.getMonth(),
+      currentDateTime.getDate()
+    );
+    const currentYear = currentDate.getFullYear();
+    // getting the next birthday
+    let nextBirthday = Date.parse(`${month} ${day}, ${currentYear}`);
+
+    // adjust the nextBirthday by one year if the current date is after their birthday
+    if (currentDate.getTime() > nextBirthday) {
+      nextBirthday = Date.parse(`${month} ${day}, ${currentYear + 1}`);
+    }
+
+    const oneDay = 24 * 60 * 60 * 1000;
+
+    // setting the default speakOutput to Happy xth Birthday!
+    // Don't worry about when to use st, th, rd--Alexa will automatically correct the ordinal for you.
+    let speakOutput = `Happy ${currentYear - year}th birthday!`;
+    if (currentDate.getTime() !== nextBirthday) {
+      const diffDays = Math.round(
+        Math.abs((currentDate.getTime() - nextBirthday) / oneDay)
+      );
+      speakOutput = `Welcome back. It looks like there are ${diffDays} days until your ${
+        currentYear - year
+      }th birthday.`;
+    }
 
     return handlerInput.responseBuilder.speak(speakOutput).getResponse();
-  }
+  },
 };
 
 const GetBirthdayHandler: RequestHandler = {
@@ -82,7 +130,7 @@ const GetBirthdayHandler: RequestHandler = {
     const birthdayAttributes = {
       year: year,
       month: month,
-      day: day
+      day: day,
     };
 
     attributesManager.setPersistentAttributes(birthdayAttributes);
@@ -96,7 +144,7 @@ const GetBirthdayHandler: RequestHandler = {
         //.reprompt('add a reprompt if you want to keep the session open for the user to respond')
         .getResponse()
     );
-  }
+  },
 };
 
 const HelpIntentHandler: RequestHandler = {
@@ -113,7 +161,7 @@ const HelpIntentHandler: RequestHandler = {
       .speak(speechText)
       .reprompt(speechText)
       .getResponse();
-  }
+  },
 };
 
 const CancelAndStopIntentHandler: RequestHandler = {
@@ -133,7 +181,7 @@ const CancelAndStopIntentHandler: RequestHandler = {
       .speak(speechText)
       .withShouldEndSession(true)
       .getResponse();
-  }
+  },
 };
 
 const SessionEndedRequestHandler: RequestHandler = {
@@ -148,7 +196,7 @@ const SessionEndedRequestHandler: RequestHandler = {
     );
 
     return handlerInput.responseBuilder.getResponse();
-  }
+  },
 };
 
 const ErrorHandler: ErrorHandler = {
@@ -162,7 +210,7 @@ const ErrorHandler: ErrorHandler = {
       .speak("Sorry, I can't understand the command. Please say again.")
       .reprompt("Sorry, I can't understand the command. Please say again.")
       .getResponse();
-  }
+  },
 };
 
 const LoadBirthdayInterceptor = {
@@ -184,16 +232,18 @@ const LoadBirthdayInterceptor = {
     if (year && month && day) {
       attributesManager.setSessionAttributes(sessionAttributes);
     }
-  }
+  },
 };
 
 export const handler = SkillBuilders.custom()
+  .withApiClient(new DefaultApiClient())
   .withPersistenceAdapter(
     new persistenceAdapter.S3PersistenceAdapter({
-      bucketName: process.env.S3_PERSISTENCE_BUCKET
+      bucketName: process.env.S3_PERSISTENCE_BUCKET,
     })
   )
   .addRequestHandlers(
+    HasBirthdayLaunchRequestHandler,
     LaunchRequestHandler,
     GetBirthdayHandler,
     HelpIntentHandler,

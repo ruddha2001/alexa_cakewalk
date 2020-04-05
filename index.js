@@ -47,7 +47,7 @@ var LaunchRequestHandler = {
             .speak(speechText)
             .reprompt(speechText)
             .getResponse();
-    }
+    },
 };
 var HasBirthdayLaunchRequestHandler = {
     canHandle: function (handlerInput) {
@@ -68,20 +68,61 @@ var HasBirthdayLaunchRequestHandler = {
             day);
     },
     handle: function (handlerInput) {
-        var attributesManager = handlerInput.attributesManager;
-        var sessionAttributes = attributesManager.getSessionAttributes() || {};
-        var year = sessionAttributes.hasOwnProperty("year")
-            ? sessionAttributes.year
-            : 0;
-        var month = sessionAttributes.hasOwnProperty("month")
-            ? sessionAttributes.month
-            : 0;
-        var day = sessionAttributes.hasOwnProperty("day")
-            ? sessionAttributes.day
-            : 0;
-        var speakOutput = "Welcome back. It looks like there are X more days until your y-th birthday.";
-        return handlerInput.responseBuilder.speak(speakOutput).getResponse();
-    }
+        return __awaiter(this, void 0, void 0, function () {
+            var attributesManager, sessionAttributes, serviceClientFactory, deviceId, userTimeZone, upsServiceClient, error_1, year, month, day, currentDateTime, currentDate, currentYear, nextBirthday, oneDay, speakOutput, diffDays;
+            return __generator(this, function (_a) {
+                switch (_a.label) {
+                    case 0:
+                        attributesManager = handlerInput.attributesManager;
+                        sessionAttributes = attributesManager.getSessionAttributes() || {};
+                        serviceClientFactory = handlerInput.serviceClientFactory;
+                        deviceId = ask_sdk_core_1.getDeviceId(handlerInput.requestEnvelope);
+                        _a.label = 1;
+                    case 1:
+                        _a.trys.push([1, 3, , 4]);
+                        upsServiceClient = serviceClientFactory.getUpsServiceClient();
+                        return [4 /*yield*/, upsServiceClient.getSystemTimeZone(deviceId)];
+                    case 2:
+                        userTimeZone = _a.sent();
+                        return [3 /*break*/, 4];
+                    case 3:
+                        error_1 = _a.sent();
+                        if (error_1.name !== "ServiceError") {
+                            return [2 /*return*/, handlerInput.responseBuilder
+                                    .speak("There was a problem connecting to the service.")
+                                    .getResponse()];
+                        }
+                        console.log("error", error_1.message);
+                        return [3 /*break*/, 4];
+                    case 4:
+                        year = sessionAttributes.hasOwnProperty("year")
+                            ? sessionAttributes.year
+                            : 0;
+                        month = sessionAttributes.hasOwnProperty("month")
+                            ? sessionAttributes.month
+                            : 0;
+                        day = sessionAttributes.hasOwnProperty("day")
+                            ? sessionAttributes.day
+                            : 0;
+                        currentDateTime = new Date(new Date().toLocaleString("en-US", { timeZone: userTimeZone }));
+                        currentDate = new Date(currentDateTime.getFullYear(), currentDateTime.getMonth(), currentDateTime.getDate());
+                        currentYear = currentDate.getFullYear();
+                        nextBirthday = Date.parse(month + " " + day + ", " + currentYear);
+                        // adjust the nextBirthday by one year if the current date is after their birthday
+                        if (currentDate.getTime() > nextBirthday) {
+                            nextBirthday = Date.parse(month + " " + day + ", " + (currentYear + 1));
+                        }
+                        oneDay = 24 * 60 * 60 * 1000;
+                        speakOutput = "Happy " + (currentYear - year) + "th birthday!";
+                        if (currentDate.getTime() !== nextBirthday) {
+                            diffDays = Math.round(Math.abs((currentDate.getTime() - nextBirthday) / oneDay));
+                            speakOutput = "Welcome back. It looks like there are " + diffDays + " days until your " + (currentYear - year) + "th birthday.";
+                        }
+                        return [2 /*return*/, handlerInput.responseBuilder.speak(speakOutput).getResponse()];
+                }
+            });
+        });
+    },
 };
 var GetBirthdayHandler = {
     canHandle: function (handlerInput) {
@@ -101,7 +142,7 @@ var GetBirthdayHandler = {
                         birthdayAttributes = {
                             year: year,
                             month: month,
-                            day: day
+                            day: day,
                         };
                         attributesManager.setPersistentAttributes(birthdayAttributes);
                         return [4 /*yield*/, attributesManager.savePersistentAttributes()];
@@ -114,7 +155,7 @@ var GetBirthdayHandler = {
                 }
             });
         });
-    }
+    },
 };
 var HelpIntentHandler = {
     canHandle: function (handlerInput) {
@@ -127,7 +168,7 @@ var HelpIntentHandler = {
             .speak(speechText)
             .reprompt(speechText)
             .getResponse();
-    }
+    },
 };
 var CancelAndStopIntentHandler = {
     canHandle: function (handlerInput) {
@@ -143,7 +184,7 @@ var CancelAndStopIntentHandler = {
             .speak(speechText)
             .withShouldEndSession(true)
             .getResponse();
-    }
+    },
 };
 var SessionEndedRequestHandler = {
     canHandle: function (handlerInput) {
@@ -152,7 +193,7 @@ var SessionEndedRequestHandler = {
     handle: function (handlerInput) {
         console.log("Session ended with reason: " + handlerInput.requestEnvelope.request.reason);
         return handlerInput.responseBuilder.getResponse();
-    }
+    },
 };
 var ErrorHandler = {
     canHandle: function (handlerInput, error) {
@@ -164,7 +205,7 @@ var ErrorHandler = {
             .speak("Sorry, I can't understand the command. Please say again.")
             .reprompt("Sorry, I can't understand the command. Please say again.")
             .getResponse();
-    }
+    },
 };
 var LoadBirthdayInterceptor = {
     process: function (handlerInput) {
@@ -193,13 +234,14 @@ var LoadBirthdayInterceptor = {
                 }
             });
         });
-    }
+    },
 };
 exports.handler = ask_sdk_core_1.SkillBuilders.custom()
+    .withApiClient(new ask_sdk_core_1.DefaultApiClient())
     .withPersistenceAdapter(new persistenceAdapter.S3PersistenceAdapter({
-    bucketName: process.env.S3_PERSISTENCE_BUCKET
+    bucketName: process.env.S3_PERSISTENCE_BUCKET,
 }))
-    .addRequestHandlers(LaunchRequestHandler, GetBirthdayHandler, HelpIntentHandler, CancelAndStopIntentHandler, SessionEndedRequestHandler)
+    .addRequestHandlers(HasBirthdayLaunchRequestHandler, LaunchRequestHandler, GetBirthdayHandler, HelpIntentHandler, CancelAndStopIntentHandler, SessionEndedRequestHandler)
     .addRequestInterceptors(LoadBirthdayInterceptor)
     .addErrorHandlers(ErrorHandler)
     .lambda();
